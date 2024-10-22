@@ -9,6 +9,13 @@ from collections import defaultdict
 st.set_page_config(page_title="IDO Analytics Dashboard", layout="wide")
 st.title("IDO Analytics Dashboard")
 
+# Add cache clear button in the top right
+col1, col2 = st.columns([6, 1])
+with col2:
+    if st.button("🔄 Clear Cache"):
+        st.cache_data.clear()
+        st.rerun()
+
 def process_participation_data(raw_df):
     idos = raw_df.drop_duplicates('IDO Name', keep='first').sort_values(['Date', 'IDO_Order'])
     idos = idos.reset_index(drop=True)
@@ -101,7 +108,7 @@ def create_participation_chart(participation_df):
     
     fig.update_layout(
         barmode='relative',
-        height=500,
+        height=700,
         hovermode='x unified',
         yaxis_title="Number of Users",
         yaxis=dict(
@@ -122,6 +129,7 @@ def create_participation_chart(participation_df):
     )
     
     return fig
+
 
 def create_sankey_data(raw_df):
     idos = raw_df.drop_duplicates('IDO Name', keep='first').sort_values(['Date', 'IDO_Order'])
@@ -371,31 +379,24 @@ def load_data():
         st.error(f"Error loading data: {e}")
         return pd.DataFrame()
 
-
 # Load initial data
 raw_df = load_data()
-#st.sidebar.info('Data refreshes automatically every 5 minutes')
 
 if not raw_df.empty:
-    # Add filters in a container at the top
+    # Add filters in a container
     with st.container():
-        col1, col2, col3 = st.columns([2, 1.5, 1.5])
+        # Project type filter
+        project_type = st.radio(
+            "Select Project Type:",
+            ["All Projects", "Node Projects Only", "IDO Projects Only"],
+            horizontal=True
+        )
         
-        with col1:
-            # Project type filter
-            project_type = st.radio(
-                "Select Project Type:",
-                ["All Projects", "Node Projects Only", "IDO Projects Only"],
-                horizontal=True
-            )
+        # Eclipse Fi filters (checked by default)
+        exclude_eclipse_presale = st.checkbox("Exclude Eclipse Fi pre-sale", value=True)
+        exclude_eclipse = st.checkbox("Exclude Eclipse Fi", value=True)
         
-        with col2:
-            # Eclipse Fi pre-sale filter
-            exclude_eclipse_presale = st.checkbox("Exclude Eclipse Fi pre-sale", value=True)
-            
-        with col3:
-            # Eclipse Fi filter
-            exclude_eclipse = st.checkbox("Exclude Eclipse Fi", value=True)
+        st.divider()  # Add a visual separator
     
     # Apply filters to create filtered_df
     filtered_df = raw_df.copy()
