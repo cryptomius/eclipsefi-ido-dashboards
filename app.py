@@ -358,7 +358,7 @@ def display_sankey_diagram(sankey_data):
     
     return fig
 
-@st.cache_data
+@st.cache_data(ttl=300)  # 300 seconds = 5 minutes
 def load_data():
     SHEET_ID = "2PACX-1vST44Twi_xb-S5v-EhkqEgiIEX-9SevcqC0DHCHOcbwiIcP6k8LaZA_j5owb8D4r32r9vYJeaYlPZJa"
     url = f"https://docs.google.com/spreadsheets/d/e/{SHEET_ID}/pub?output=csv"
@@ -374,6 +374,7 @@ def load_data():
 
 # Load initial data
 raw_df = load_data()
+#st.sidebar.info('Data refreshes automatically every 5 minutes')
 
 if not raw_df.empty:
     # Add filters in a container at the top
