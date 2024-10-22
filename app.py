@@ -390,11 +390,11 @@ if not raw_df.empty:
         
         with col2:
             # Eclipse Fi pre-sale filter
-            exclude_eclipse_presale = st.checkbox("Exclude Eclipse Fi pre-sale", value=False)
+            exclude_eclipse_presale = st.checkbox("Exclude Eclipse Fi pre-sale", value=True)
             
         with col3:
             # Eclipse Fi filter
-            exclude_eclipse = st.checkbox("Exclude Eclipse Fi", value=False)
+            exclude_eclipse = st.checkbox("Exclude Eclipse Fi", value=True)
     
     # Apply filters to create filtered_df
     filtered_df = raw_df.copy()
