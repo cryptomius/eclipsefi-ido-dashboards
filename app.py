@@ -9,24 +9,6 @@ from collections import defaultdict
 st.set_page_config(page_title="IDO Analytics Dashboard", layout="wide")
 st.title("IDO Analytics Dashboard")
 
-@st.cache_data
-def load_data():
-    SHEET_ID = "2PACX-1vST44Twi_xb-S5v-EhkqEgiIEX-9SevcqC0DHCHOcbwiIcP6k8LaZA_j5owb8D4r32r9vYJeaYlPZJa"
-    url = f"https://docs.google.com/spreadsheets/d/e/{SHEET_ID}/pub?output=csv"
-    
-    try:
-        raw_df = pd.read_csv(url)
-        raw_df['Date'] = pd.to_datetime(raw_df['Date'], format='%d %b %Y')
-        
-        ido_dates = raw_df.sort_values('Date').groupby('IDO Name')['Date'].first()
-        ido_order = {ido: idx for idx, ido in enumerate(ido_dates.index)}
-        raw_df['IDO_Order'] = raw_df['IDO Name'].map(ido_order)
-        raw_df = raw_df.sort_values(['Date', 'IDO_Order'])
-        return raw_df
-    except Exception as e:
-        st.error(f"Error loading data: {e}")
-        return pd.DataFrame()
-
 def process_participation_data(raw_df):
     idos = raw_df.drop_duplicates('IDO Name', keep='first').sort_values(['Date', 'IDO_Order'])
     idos = idos.reset_index(drop=True)
@@ -92,6 +74,54 @@ def process_cohort_data(raw_df):
             })
     
     return pd.DataFrame(cohort_data)
+
+def create_participation_chart(participation_df):
+    fig = go.Figure()
+    
+    pos_categories = ["new", "repeat", "reactivated"]
+    colors_pos = ["#82ca9d", "#8884d8", "#ffc658"]
+    
+    x_labels = [f"{row['idoName']}<br>{row['date'].strftime('%Y-%m-%d')}" 
+               for _, row in participation_df.iterrows()]
+    
+    for cat, color in zip(pos_categories, colors_pos):
+        fig.add_trace(go.Bar(
+            name=cat.capitalize(),
+            x=x_labels,
+            y=participation_df[cat],
+            marker_color=color
+        ))
+    
+    fig.add_trace(go.Bar(
+        name="Churned",
+        x=x_labels,
+        y=[-v for v in participation_df["churned"]],
+        marker_color="#ff7c43"
+    ))
+    
+    fig.update_layout(
+        barmode='relative',
+        height=500,
+        hovermode='x unified',
+        yaxis_title="Number of Users",
+        yaxis=dict(
+            zeroline=True,
+            zerolinewidth=2,
+            zerolinecolor='black',
+        ),
+        xaxis_title="IDO Projects",
+        xaxis=dict(tickangle=0),
+        showlegend=True,
+        legend=dict(
+            orientation="h",
+            yanchor="bottom",
+            y=1.02,
+            xanchor="right",
+            x=1
+        )
+    )
+    
+    return fig
 
 def create_sankey_data(raw_df):
     idos = raw_df.drop_duplicates('IDO Name', keep='first').sort_values(['Date', 'IDO_Order'])
@@ -328,12 +358,72 @@ def display_sankey_diagram(sankey_data):
     
     return fig
 
-# Load and process data
+@st.cache_data
+def load_data():
+    SHEET_ID = "2PACX-1vST44Twi_xb-S5v-EhkqEgiIEX-9SevcqC0DHCHOcbwiIcP6k8LaZA_j5owb8D4r32r9vYJeaYlPZJa"
+    url = f"https://docs.google.com/spreadsheets/d/e/{SHEET_ID}/pub?output=csv"
+    
+    try:
+        raw_df = pd.read_csv(url)
+        raw_df['Date'] = pd.to_datetime(raw_df['Date'], format='%d %b %Y')
+        return raw_df
+    except Exception as e:
+        st.error(f"Error loading data: {e}")
+        return pd.DataFrame()
+
+
+# Load initial data
 raw_df = load_data()
 
 if not raw_df.empty:
-    participation_df = process_participation_data(raw_df)
-    cohort_df = process_cohort_data(raw_df)
+    # Add filters in a container at the top
+    with st.container():
+        col1, col2, col3 = st.columns([2, 1.5, 1.5])
+        
+        with col1:
+            # Project type filter
+            project_type = st.radio(
+                "Select Project Type:",
+                ["All Projects", "Node Projects Only", "IDO Projects Only"],
+                horizontal=True
+            )
+        
+        with col2:
+            # Eclipse Fi pre-sale filter
+            exclude_eclipse_presale = st.checkbox("Exclude Eclipse Fi pre-sale", value=False)
+            
+        with col3:
+            # Eclipse Fi filter
+            exclude_eclipse = st.checkbox("Exclude Eclipse Fi", value=False)
+    
+    # Apply filters to create filtered_df
+    filtered_df = raw_df.copy()
+    
+    # Apply project type filter
+    if project_type == "Node Projects Only":
+        filtered_df = filtered_df[filtered_df['Type'] == 'Node']
+    elif project_type == "IDO Projects Only":
+        filtered_df = filtered_df[filtered_df['Type'] == 'IDO']
+    
+    # Apply Eclipse Fi filters
+    projects_to_exclude = []
+    if exclude_eclipse_presale:
+        projects_to_exclude.append("Eclipse Fi pre-sale")
+    if exclude_eclipse:
+        projects_to_exclude.append("Eclipse Fi")
+    
+    if projects_to_exclude:
+        filtered_df = filtered_df[~filtered_df['IDO Name'].isin(projects_to_exclude)]
+    
+    # Sort and create IDO order
+    ido_dates = filtered_df.sort_values('Date').groupby('IDO Name')['Date'].first()
+    ido_order = {ido: idx for idx, ido in enumerate(ido_dates.index)}
+    filtered_df['IDO_Order'] = filtered_df['IDO Name'].map(ido_order)
+    filtered_df = filtered_df.sort_values(['Date', 'IDO_Order'])
+    
+    # Process data for visualizations using filtered_df
+    participation_df = process_participation_data(filtered_df)
+    cohort_df = process_cohort_data(filtered_df)
 
     # Create two columns for the first row of charts
     col1, col2 = st.columns(2)
@@ -342,13 +432,13 @@ if not raw_df.empty:
         st.subheader("Cohort Retention by IDO Participation")
         
         fig_retention = px.line(cohort_df, 
-                               x="ido_number", 
-                               y="retention", 
-                               color="cohort",
-                               title="Retention by Cohort",
-                               labels={"ido_number": "Nth IDO Participation",
-                                     "retention": "Retention Rate (%)",
-                                     "cohort": "Started with"})
+                            x="ido_number", 
+                            y="retention", 
+                            color="cohort",
+                            title="Retention by Cohort",
+                            labels={"ido_number": "Nth IDO Participation",
+                                    "retention": "Retention Rate (%)",
+                                    "cohort": "Started with"})
         
         fig_retention.update_layout(
             height=700,
@@ -361,56 +451,13 @@ if not raw_df.empty:
         st.plotly_chart(fig_retention, use_container_width=True)
         
         st.caption("""Shows how each cohort (grouped by their first IDO) continues to participate in subsequent IDOs.
-                     Each line represents users who started with a specific IDO.""")
+                    Each line represents users who started with a specific IDO.""")
 
     with col2:
         st.subheader("User Participation Breakdown by IDO")
         
-        fig_participation = go.Figure()
-        
-        pos_categories = ["new", "repeat", "reactivated"]
-        colors_pos = ["#82ca9d", "#8884d8", "#ffc658"]
-        
-        x_labels = [f"{row['idoName']}<br>{row['date'].strftime('%Y-%m-%d')}" 
-                   for _, row in participation_df.iterrows()]
-        
-        for cat, color in zip(pos_categories, colors_pos):
-            fig_participation.add_trace(go.Bar(
-                name=cat.capitalize(),
-                x=x_labels,
-                y=participation_df[cat],
-                marker_color=color
-            ))
-        
-        fig_participation.add_trace(go.Bar(
-            name="Churned",
-            x=x_labels,
-            y=[-v for v in participation_df["churned"]],
-            marker_color="#ff7c43"
-        ))
-        
-        fig_participation.update_layout(
-            barmode='relative',
-            height=700,
-            hovermode='x unified',
-            yaxis_title="Number of Users",
-            yaxis=dict(
-                zeroline=True,
-                zerolinewidth=2,
-                zerolinecolor='black',
-            ),
-            xaxis_title="IDO Projects",
-            xaxis=dict(tickangle=0),
-            showlegend=True,
-            legend=dict(
-                orientation="h",
-                yanchor="bottom",
-                y=1.02,
-                xanchor="right",
-                x=1
-            )
-        )
-        
+        fig_participation = create_participation_chart(participation_df)
+        fig_participation.update_layout(height=700)
         st.plotly_chart(fig_participation, use_container_width=True)
         
         st.caption("""
@@ -422,8 +469,9 @@ if not raw_df.empty:
 
     # Add Sankey diagram in full width below
     st.subheader("User Flow Analysis")
-    sankey_data = create_sankey_data(raw_df)
+    sankey_data = create_sankey_data(filtered_df)
     fig_sankey = display_sankey_diagram(sankey_data)
+    fig_sankey.update_layout(height=1000)
     st.plotly_chart(fig_sankey, use_container_width=True)
     
     st.caption("""
@@ -439,7 +487,7 @@ if not raw_df.empty:
     st.subheader("Data Processing")
     with st.expander("Show Raw Data"):
         st.write("Raw Data (sorted by date)")
-        st.dataframe(raw_df.sort_values('Date'))
+        st.dataframe(filtered_df.sort_values('Date'))
         st.write("Processed Participation Data")
         st.dataframe(participation_df)
         st.write("Processed Cohort Data")
