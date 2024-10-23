@@ -604,19 +604,23 @@ def process_top_participants(filtered_df):
         'Private': 'sum',
         'FCFS': 'sum',
         'Total USD': 'sum',
-        'IDO Name': 'nunique',  # Count unique projects
-        'Type': lambda x: (x == 'IDO').sum(),  # Count IDOs
+        'IDO Name': lambda x: ', '.join(sorted(set(x), key=lambda y: filtered_df[filtered_df['IDO Name'] == y]['Date'].iloc[0])),
+        'Type': lambda x: (x == 'Token').sum(),
+        'Country': 'first'  # Assuming the country is consistent for each wallet
     }).reset_index()
     
     # Rename columns
     top_participants.rename(columns={
-        'IDO Name': 'Projects',
-        'Type': 'IDOs',
+        'IDO Name': 'Project Names',
+        'Type': 'Token',
         'Total USD': 'USD'
     }, inplace=True)
     
     # Calculate Node Sales
-    top_participants['Node Sales'] = top_participants['Projects'] - top_participants['IDOs']
+    top_participants['Node'] = top_participants['Project Names'].apply(lambda x: len(x.split(', '))) - top_participants['Token']
+    
+    # Calculate total number of projects
+    top_participants['Projects #'] = top_participants['Project Names'].apply(lambda x: len(x.split(', ')))
     
     # Sort by USD descending and get top 100
     top_participants = top_participants.sort_values('USD', ascending=False).head(100)
@@ -624,6 +628,10 @@ def process_top_participants(filtered_df):
     # Round to nearest integer for monetary values
     for col in ['Private', 'FCFS', 'USD']:
         top_participants[col] = top_participants[col].round().astype(int)
+    
+    # Reorder columns
+    column_order = ['Wallet Address', 'Private', 'FCFS', 'USD', 'Token', 'Node', 'Projects #', 'Project Names']
+    top_participants = top_participants[column_order]
     
     return top_participants
 
@@ -766,48 +774,66 @@ if not raw_df.empty:
     st.subheader("Top 100 Participants")
     
     # Use Streamlit's dataframe function with number formatting
+    # Define column_order before using it
+    column_order = ['Wallet Address', 'Private', 'FCFS', 'USD', 'Token', 'Node', 'Projects #', 'Project Names']
+
     st.dataframe(
         top_participants,
         column_config={
-            "Wallet Address": st.column_config.TextColumn("Wallet Address"),
+            "Wallet Address": st.column_config.TextColumn("Wallet Address", width="medium"),
             "Private": st.column_config.NumberColumn(
                 "Private",
                 help="Private round contribution",
                 format="$%d",
+                width="small",
             ),
             "FCFS": st.column_config.NumberColumn(
                 "FCFS",
                 help="FCFS round contribution",
                 format="$%d",
+                width="small",
             ),
             "USD": st.column_config.NumberColumn(
                 "USD",
                 help="Total contribution",
                 format="$%d",
+                width="small",
             ),
-            "Projects": st.column_config.NumberColumn(
-                "Projects",
-                help="Number of unique projects participated in",
+            "Token": st.column_config.NumberColumn(
+                "Token",
+                help="Number of token sale projects participated in",
                 format="%d",
+                width="small",
             ),
-            "IDOs": st.column_config.NumberColumn(
-                "IDOs",
-                help="Number of IDO projects participated in",
+            "Node": st.column_config.NumberColumn(
+                "Node",
+                help="Number of node sale projects participated in",
                 format="%d",
+                width="small",
             ),
-            "Node Sales": st.column_config.NumberColumn(
-                "Node Sales",
-                help="Number of Node sale projects participated in",
+            "Projects #": st.column_config.NumberColumn(
+                "Projects #",
+                help="Total number of projects participated in",
                 format="%d",
+                width="small",
+            ),
+            "Project Names": st.column_config.TextColumn(
+                "Project Names",
+                help="List of projects participated in, sorted by date",
+                width="large",
             ),
         },
         hide_index=True,
+        column_order=column_order,
         height=500,
     )
     
     st.caption("""
     This table shows the top 100 participants across all currently filtered and displayed projects,
     sorted by total USD contribution. You can click on the column headers to resort the table.
+    The 'Project Names' column lists all projects the participant has been involved in, sorted by date.
+    'Token' represents the number of token-based IDO projects participated in, while 'Node'
+    shows the number of node sale projects. 'Projects #' is the total number of projects participated in.
     """)
 
     # # Add data processing section
