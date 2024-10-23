@@ -357,7 +357,7 @@ def display_sankey_diagram(sankey_data):
     )])
     
     fig.update_layout(
-        title_text="User Flow Between IDOs",
+        title_text="User Flow Between Projects",  # Changed from "User Flow Between IDOs"
         height=1000,
         font=dict(
             size=13,
@@ -418,10 +418,10 @@ def process_country_data(filtered_df):
     return country_data
 
 def process_country_data_for_bar_race(country_data):
-    # Pivot the data to create a matrix of countries vs IDOs
+    # Pivot the data to create a matrix of countries vs projects
     pivot_data = country_data.pivot(index=['IDO Name', 'Date'], columns='Country', values='Participants').fillna(0)
     
-    # Sort IDOs by date
+    # Sort projects by date
     pivot_data = pivot_data.sort_index(level='Date')
     
     # Get top 20 countries by total participation
@@ -433,7 +433,7 @@ def process_country_data_for_bar_race(country_data):
     # Calculate cumulative maximum for each country
     cumulative_max = pivot_data.cummax()
     
-    # Reset index to make IDO Name the only index
+    # Reset index to make project name the only index
     pivot_data = pivot_data.reset_index(level='Date')
     cumulative_max = cumulative_max.reset_index(level='Date')
     
@@ -489,7 +489,7 @@ def create_animated_bar_chart(pivot_data, cumulative_max):
             )
         ],
         layout=go.Layout(
-            title="Top 20 Countries Participation by IDO",
+            title="Top 20 Countries Participation by Project",  # Changed from "by IDO"
             xaxis=dict(tickangle=-45, title=None),
             yaxis=dict(title="Number of Participants", range=[0, 40]),  # Set y-axis range
             barmode='overlay'
@@ -546,7 +546,7 @@ def create_animated_bar_chart(pivot_data, cumulative_max):
         "xanchor": "left",
         "currentvalue": {
             "font": {"size": 16},
-            "prefix": "IDO: ",
+            "prefix": "Project: ",  # Changed from "IDO: "
             "visible": True,
             "xanchor": "right"
         },
@@ -620,7 +620,7 @@ if not raw_df.empty:
         # Project type filter
         project_type = st.radio(
             "Select Project Type:",
-            ["All Projects", "Node Projects Only", "IDO Projects Only"],
+            ["All Projects", "Node Projects Only", "Token Projects Only"],  # Changed "IDO Projects Only" to "Token Projects Only"
             horizontal=True
         )
         
@@ -636,8 +636,8 @@ if not raw_df.empty:
     # Apply project type filter
     if project_type == "Node Projects Only":
         filtered_df = filtered_df[filtered_df['Type'] == 'Node']
-    elif project_type == "IDO Projects Only":
-        filtered_df = filtered_df[filtered_df['Type'] == 'IDO']
+    elif project_type == "Token Projects Only":  # Changed from "IDO Projects Only"
+        filtered_df = filtered_df[filtered_df['Type'] == 'Token']  # Changed from 'IDO' to 'Token'
     
     # Apply Eclipse Fi filters
     projects_to_exclude = []
@@ -715,16 +715,16 @@ if not raw_df.empty:
     st.plotly_chart(fig_sankey, use_container_width=True)
     
     st.caption("""
-    This Sankey diagram shows how users flow between different states across IDOs:
-    - Green: New users in each IDO
-    - Purple: Repeat users from the previous IDO
-    - Yellow: Reactivated users who skipped at least one IDO
-    - Orange: Users who churned (didn't participate in this IDO)
+    This Sankey diagram shows how users flow between different states across projects:
+    - Green: New users in each project
+    - Purple: Repeat users from the previous project
+    - Yellow: Reactivated users who skipped at least one project
+    - Orange: Users who churned (didn't participate in this project)
     The width of each flow indicates the number of users taking that path.
     """)
 
     # Add animated bar chart race at the bottom
-    st.subheader("Top 20 Countries Participation by IDO")
+    st.subheader("Top 20 Countries Participation by Project")
 
     # Process data for animated bar chart race
     pivot_data, cumulative_max = process_country_data_for_bar_race(country_data)
@@ -733,12 +733,12 @@ if not raw_df.empty:
     st.plotly_chart(fig_bar_race, use_container_width=True, key="country_bar_race")
 
     st.caption("""
-    This animated bar chart shows how the top 20 countries' participation changes across IDOs.
-    Each frame represents an IDO, sorted by their date of occurrence from earliest to latest.
-    The colored bars represent the number of participants from each country for the current IDO.
+    This animated bar chart shows how the top 20 countries' participation changes across projects.
+    Each frame represents a project, sorted by their date of occurrence from earliest to latest.
+    The colored bars represent the number of participants from each country for the current project.
     The light gray "ghost" bars show the highest number of participants achieved by each country up to that point.
-    The black error bars indicate the median participation 'water level' for each country across all IDOs.
-    Use the slider to move between IDOs and watch the bars animate smoothly.
+    The black error bars indicate the median participation 'water level' for each country across all projects.
+    Use the slider to move between projects and watch the bars animate smoothly.
     """)
 
     # Add top participants data table
