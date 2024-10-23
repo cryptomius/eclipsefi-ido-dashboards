@@ -386,24 +386,31 @@ def load_data():
         return pd.DataFrame()
 
 def process_country_data(filtered_df):
-    # Group by IDO Name, Date, and Country, count unique wallet addresses
-    country_data = filtered_df.groupby(['IDO Name', 'Date', 'Country'])['Wallet Address'].nunique().reset_index()
-    country_data.columns = ['IDO Name', 'Date', 'Country', 'Participants']
+    # Group by IDO Name, Date, and Country, count unique wallet addresses and sum USD
+    country_data = filtered_df.groupby(['IDO Name', 'Date', 'Country']).agg({
+        'Wallet Address': 'nunique',
+        'Total USD': 'sum'
+    }).reset_index()
+    country_data.columns = ['IDO Name', 'Date', 'Country', 'Participants', 'USD']
     
-    # Calculate the total participants for each IDO
-    ido_totals = country_data.groupby(['IDO Name', 'Date'])['Participants'].sum().reset_index()
-    ido_totals.columns = ['IDO Name', 'Date', 'Total Participants']
+    # Calculate the total participants and USD for each IDO
+    ido_totals = country_data.groupby(['IDO Name', 'Date']).agg({
+        'Participants': 'sum',
+        'USD': 'sum'
+    }).reset_index()
+    ido_totals.columns = ['IDO Name', 'Date', 'Total Participants', 'Total USD']
     
     # Merge the totals back to the country_data
     country_data = country_data.merge(ido_totals, on=['IDO Name', 'Date'])
     
-    # Calculate the percentage
-    country_data['Percentage'] = country_data['Participants'] / country_data['Total Participants'] * 100
+    # Calculate the percentages
+    country_data['Percentage Participants'] = country_data['Participants'] / country_data['Total Participants'] * 100
+    country_data['Percentage USD'] = country_data['USD'] / country_data['Total USD'] * 100
     
-    # Sort by IDO Name, Date, and Percentage
-    country_data = country_data.sort_values(['IDO Name', 'Date', 'Percentage'], ascending=[True, True, False])
+    # Sort by IDO Name, Date, and Percentage Participants
+    country_data = country_data.sort_values(['IDO Name', 'Date', 'Percentage Participants'], ascending=[True, True, False])
     
-    # Keep only top 20 countries for each IDO
+    # Keep only top 20 countries for each IDO based on Participants
     country_data = country_data.groupby('IDO Name').apply(lambda x: x.nlargest(20, 'Participants')).reset_index(drop=True)
     
     # Get the IDO order from the filtered_df
@@ -417,17 +424,23 @@ def process_country_data(filtered_df):
     
     return country_data
 
-def process_country_data_for_bar_race(country_data):
+def process_country_data_for_bar_race(country_data, metric='Participants'):
     # Pivot the data to create a matrix of countries vs projects
-    pivot_data = country_data.pivot(index=['IDO Name', 'Date'], columns='Country', values='Participants').fillna(0)
+    pivot_data = country_data.pivot(index=['IDO Name', 'Date'], columns='Country', values=metric).fillna(0)
     
     # Sort projects by date
     pivot_data = pivot_data.sort_index(level='Date')
     
-    # Get top 20 countries by total participation
-    top_20_countries = pivot_data.sum().nlargest(20).index.tolist()
+    # Calculate the maximum value for each country across all projects
+    country_max_values = pivot_data.max()
     
-    # Filter for top 20 countries
+    # Sort countries based on their maximum values in descending order
+    sorted_countries = country_max_values.sort_values(ascending=False).index.tolist()
+    
+    # Get top 20 countries
+    top_20_countries = sorted_countries[:20]
+    
+    # Filter for top 20 countries and sort columns
     pivot_data = pivot_data[top_20_countries]
     
     # Calculate cumulative maximum for each country
@@ -439,15 +452,19 @@ def process_country_data_for_bar_race(country_data):
     
     return pivot_data, cumulative_max
 
-def create_animated_bar_chart(pivot_data, cumulative_max):
+def create_animated_bar_chart(pivot_data, cumulative_max, metric='Participants'):
     countries = pivot_data.columns[1:]  # Exclude 'Date' column
     
-    # Calculate median participation for each country
-    median_participation = pivot_data.iloc[:, 1:].median()
+    # Calculate median for each country
+    median_values = pivot_data.iloc[:, 1:].median()
     
     # Create a custom color palette for 20 countries
     colors = px.colors.qualitative.Plotly + px.colors.qualitative.Set2 + px.colors.qualitative.Pastel
     colors = colors[:len(countries)]  # Ensure we have exactly as many colors as countries
+    
+    # Determine y-axis title and format based on metric
+    y_axis_title = "Number of Participants" if metric == 'Participants' else "USD Contributed"
+    value_format = ',.0f' if metric == 'Participants' else ',.2f'
     
     # Create the initial figure without frames and sliders
     fig = go.Figure(
@@ -459,39 +476,39 @@ def create_animated_bar_chart(pivot_data, cumulative_max):
                 marker=dict(color='rgba(200,200,200,0.25)'),
                 name='Historical Maximum'
             ),
-            # Current participation bars
+            # Current values bars
             go.Bar(
                 x=countries,
                 y=pivot_data.iloc[0, 1:],
                 text=pivot_data.iloc[0, 1:],
-                texttemplate='%{text:,.0f}',
+                texttemplate='%{text:' + value_format + '}',
                 textposition='outside',
                 textfont=dict(size=10),
                 marker=dict(color=colors),
-                name='Current Participation'
+                name=f'Current {metric}'
             ),
-            # Median participation as error bars
+            # Median values as error bars
             go.Bar(
                 x=countries,
-                y=median_participation,  # Use median as the base
+                y=median_values,  # Use median as the base
                 error_y=dict(
                     type='data',
                     symmetric=False,
                     array=[0] * len(countries),  # No upper error
-                    arrayminus=median_participation,  # Lower error goes down to 0
+                    arrayminus=median_values,  # Lower error goes down to 0
                     visible=True,
                     color='rgba(0,0,0,0.6)',
                     thickness=1.5,
                     width=6
                 ),
                 marker=dict(color='rgba(0,0,0,0)', line=dict(width=0)),  # Invisible bar
-                name='Median Participation'
+                name=f'Median {metric}'
             )
         ],
         layout=go.Layout(
-            title="Top 20 Countries Participation by Project",  # Changed from "by IDO"
+            title=f"Top 20 Countries {metric} by Project",
             xaxis=dict(tickangle=-45, title=None),
-            yaxis=dict(title="Number of Participants", range=[0, 40]),  # Set y-axis range
+            yaxis=dict(title=y_axis_title),
             barmode='overlay'
         )
     )
@@ -504,33 +521,33 @@ def create_animated_bar_chart(pivot_data, cumulative_max):
                 go.Bar(x=countries,
                        y=cumulative_max.iloc[i, 1:],
                        marker=dict(color='rgba(200,200,200,0.25)')),
-                # Current participation bars
+                # Current values bars
                 go.Bar(x=countries,
                        y=pivot_data.iloc[i, 1:],
                        text=pivot_data.iloc[i, 1:],
+                       texttemplate='%{text:' + value_format + '}',
                        marker=dict(color=colors)),
-                # Median participation as error bars (stays constant)
+                # Median values as error bars (stays constant)
                 go.Bar(
                     x=countries,
-                    y=median_participation,  # Use median as the base
+                    y=median_values,  # Use median as the base
                     error_y=dict(
                         type='data',
                         symmetric=False,
                         array=[0] * len(countries),  # No upper error
-                        arrayminus=median_participation,  # Lower error goes down to 0
+                        arrayminus=median_values,  # Lower error goes down to 0
                         visible=True,
                         color='rgba(0,0,0,0.6)',
                         thickness=1.5,
                         width=6
                     ),
                     marker=dict(color='rgba(0,0,0,0)', line=dict(width=0)),  # Invisible bar
-                    name='Median Participation'
+                    name=f'Median {metric}'
                 )
             ],
             name=f"{pivot_data.index[i]} ({pivot_data.iloc[i]['Date'].strftime('%Y-%m-%d')})",
             layout=go.Layout(
-                title_text=f"Top 20 Countries Participation: {pivot_data.index[i]} ({pivot_data.iloc[i]['Date'].strftime('%Y-%m-%d')})",
-                yaxis=dict(range=[0, 40])  # Set y-axis range for each frame
+                title_text=f"Top 20 Countries {metric}: {pivot_data.index[i]} ({pivot_data.iloc[i]['Date'].strftime('%Y-%m-%d')})",
             )
         )
         for i in range(len(pivot_data))
@@ -546,7 +563,7 @@ def create_animated_bar_chart(pivot_data, cumulative_max):
         "xanchor": "left",
         "currentvalue": {
             "font": {"size": 16},
-            "prefix": "Project: ",  # Changed from "IDO: "
+            "prefix": "Project: ",
             "visible": True,
             "xanchor": "right"
         },
@@ -576,8 +593,7 @@ def create_animated_bar_chart(pivot_data, cumulative_max):
     fig.update_layout(
         sliders=sliders,
         height=600,
-        legend_title_text='Participation',
-        yaxis=dict(range=[0, 40])  # Ensure y-axis range is set in the final layout
+        legend_title_text=metric,
     )
     
     return fig
@@ -726,19 +742,24 @@ if not raw_df.empty:
     # Add animated bar chart race at the bottom
     st.subheader("Top 20 Countries Participation by Project")
 
+    # Add toggle for metric
+    metric = st.radio("Select Metric:", ["Participants", "USD"], horizontal=True)
+
     # Process data for animated bar chart race
-    pivot_data, cumulative_max = process_country_data_for_bar_race(country_data)
-    fig_bar_race = create_animated_bar_chart(pivot_data, cumulative_max)
+    country_data = process_country_data(filtered_df)
+    pivot_data, cumulative_max = process_country_data_for_bar_race(country_data, metric)
+    fig_bar_race = create_animated_bar_chart(pivot_data, cumulative_max, metric)
 
     st.plotly_chart(fig_bar_race, use_container_width=True, key="country_bar_race")
 
-    st.caption("""
-    This animated bar chart shows how the top 20 countries' participation changes across projects.
+    st.caption(f"""
+    This animated bar chart shows how the top 20 countries' {metric.lower()} changes across projects.
     Each frame represents a project, sorted by their date of occurrence from earliest to latest.
-    The colored bars represent the number of participants from each country for the current project.
-    The light gray "ghost" bars show the highest number of participants achieved by each country up to that point.
-    The black error bars indicate the median participation 'water level' for each country across all projects.
+    The colored bars represent the {metric.lower()} from each country for the current project.
+    The light gray "ghost" bars show the highest {metric.lower()} achieved by each country up to that point.
+    The black error bars indicate the median {metric.lower()} 'water level' for each country across all projects.
     Use the slider to move between projects and watch the bars animate smoothly.
+    Countries are sorted based on their highest value across all projects, in descending order.
     """)
 
     # Add top participants data table
