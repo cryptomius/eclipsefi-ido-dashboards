@@ -594,18 +594,19 @@ def process_top_participants(filtered_df):
     
     # Rename columns
     top_participants.rename(columns={
-        'IDO Name': 'Total Projects',
-        'Type': 'Total IDOs'
+        'IDO Name': 'Projects',
+        'Type': 'IDOs',
+        'Total USD': 'USD'
     }, inplace=True)
     
-    # Calculate Total Node Sales
-    top_participants['Total Node Sales'] = top_participants['Total Projects'] - top_participants['Total IDOs']
+    # Calculate Node Sales
+    top_participants['Node Sales'] = top_participants['Projects'] - top_participants['IDOs']
     
-    # Sort by Total USD descending and get top 100
-    top_participants = top_participants.sort_values('Total USD', ascending=False).head(100)
+    # Sort by USD descending and get top 100
+    top_participants = top_participants.sort_values('USD', ascending=False).head(100)
     
     # Round to nearest integer for monetary values
-    for col in ['Private', 'FCFS', 'Total USD']:
+    for col in ['Private', 'FCFS', 'USD']:
         top_participants[col] = top_participants[col].round().astype(int)
     
     return top_participants
@@ -758,23 +759,23 @@ if not raw_df.empty:
                 help="FCFS round contribution",
                 format="$%d",
             ),
-            "Total USD": st.column_config.NumberColumn(
-                "Total USD",
+            "USD": st.column_config.NumberColumn(
+                "USD",
                 help="Total contribution",
                 format="$%d",
             ),
-            "Total Projects": st.column_config.NumberColumn(
-                "Total Projects",
+            "Projects": st.column_config.NumberColumn(
+                "Projects",
                 help="Number of unique projects participated in",
                 format="%d",
             ),
-            "Total IDOs": st.column_config.NumberColumn(
-                "Total IDOs",
+            "IDOs": st.column_config.NumberColumn(
+                "IDOs",
                 help="Number of IDO projects participated in",
                 format="%d",
             ),
-            "Total Node Sales": st.column_config.NumberColumn(
-                "Total Node Sales",
+            "Node Sales": st.column_config.NumberColumn(
+                "Node Sales",
                 help="Number of Node sale projects participated in",
                 format="%d",
             ),
@@ -788,18 +789,16 @@ if not raw_df.empty:
     sorted by total USD contribution. You can click on the column headers to resort the table.
     """)
 
-    # Comment out the existing data processing section
-    """
-    # Add data processing section
-    st.subheader("Data Processing")
-    with st.expander("Show Raw Data"):
-        st.write("Raw Data (sorted by date)")
-        st.dataframe(filtered_df.sort_values('Date'))
-        st.write("Processed Participation Data")
-        st.dataframe(participation_df)
-        st.write("Processed Cohort Data")
-        st.dataframe(cohort_df)
-    """
+    # # Add data processing section
+    # st.subheader("Data Processing")
+    # with st.expander("Show Raw Data"):
+    #     st.write("Raw Data (sorted by date)")
+    #     st.dataframe(filtered_df.sort_values('Date'))
+    #     st.write("Processed Participation Data")
+    #     st.dataframe(participation_df)
+    #     st.write("Processed Cohort Data")
+    #     st.dataframe(cohort_df)
+    
 else:
     st.error("No data available. Please check the Google Sheets URL and permissions.")
 
