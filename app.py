@@ -2,8 +2,13 @@ import streamlit as st
 import pandas as pd
 import plotly.graph_objects as go
 import plotly.express as px
+import plotly.figure_factory as ff
 from datetime import datetime
 from collections import defaultdict
+import locale
+
+# Set locale for number formatting
+locale.setlocale(locale.LC_ALL, '')  # Use '' for system's default locale
 
 # Page config
 st.set_page_config(page_title="IDO Analytics Dashboard", layout="wide")
@@ -577,6 +582,34 @@ def create_animated_bar_chart(pivot_data, cumulative_max):
     
     return fig
 
+def process_top_participants(filtered_df):
+    # Group by wallet address and calculate the required metrics
+    top_participants = filtered_df.groupby('Wallet Address').agg({
+        'Private': 'sum',
+        'FCFS': 'sum',
+        'Total USD': 'sum',
+        'IDO Name': 'nunique',  # Count unique projects
+        'Type': lambda x: (x == 'IDO').sum(),  # Count IDOs
+    }).reset_index()
+    
+    # Rename columns
+    top_participants.rename(columns={
+        'IDO Name': 'Total Projects',
+        'Type': 'Total IDOs'
+    }, inplace=True)
+    
+    # Calculate Total Node Sales
+    top_participants['Total Node Sales'] = top_participants['Total Projects'] - top_participants['Total IDOs']
+    
+    # Sort by Total USD descending and get top 100
+    top_participants = top_participants.sort_values('Total USD', ascending=False).head(100)
+    
+    # Round to nearest integer for monetary values
+    for col in ['Private', 'FCFS', 'Total USD']:
+        top_participants[col] = top_participants[col].round().astype(int)
+    
+    return top_participants
+
 # Load initial data
 raw_df = load_data()
 
@@ -628,7 +661,8 @@ if not raw_df.empty:
     # Process country data
     country_data = process_country_data(filtered_df)
 
-
+    # Process top participants data
+    top_participants = process_top_participants(filtered_df)
 
     # Create two columns for the first row of charts
     col1, col2 = st.columns(2)
@@ -706,6 +740,56 @@ if not raw_df.empty:
     Use the slider to move between IDOs and watch the bars animate smoothly.
     """)
 
+    # Add top participants data table
+    st.subheader("Top 100 Participants")
+    
+    # Use Streamlit's dataframe function with number formatting
+    st.dataframe(
+        top_participants,
+        column_config={
+            "Wallet Address": st.column_config.TextColumn("Wallet Address"),
+            "Private": st.column_config.NumberColumn(
+                "Private",
+                help="Private round contribution",
+                format="$%d",
+            ),
+            "FCFS": st.column_config.NumberColumn(
+                "FCFS",
+                help="FCFS round contribution",
+                format="$%d",
+            ),
+            "Total USD": st.column_config.NumberColumn(
+                "Total USD",
+                help="Total contribution",
+                format="$%d",
+            ),
+            "Total Projects": st.column_config.NumberColumn(
+                "Total Projects",
+                help="Number of unique projects participated in",
+                format="%d",
+            ),
+            "Total IDOs": st.column_config.NumberColumn(
+                "Total IDOs",
+                help="Number of IDO projects participated in",
+                format="%d",
+            ),
+            "Total Node Sales": st.column_config.NumberColumn(
+                "Total Node Sales",
+                help="Number of Node sale projects participated in",
+                format="%d",
+            ),
+        },
+        hide_index=True,
+        height=500,
+    )
+    
+    st.caption("""
+    This table shows the top 100 participants across all currently filtered and displayed projects,
+    sorted by total USD contribution. You can click on the column headers to resort the table.
+    """)
+
+    # Comment out the existing data processing section
+    """
     # Add data processing section
     st.subheader("Data Processing")
     with st.expander("Show Raw Data"):
@@ -715,14 +799,7 @@ if not raw_df.empty:
         st.dataframe(participation_df)
         st.write("Processed Cohort Data")
         st.dataframe(cohort_df)
+    """
 else:
     st.error("No data available. Please check the Google Sheets URL and permissions.")
-
-
-
-
-
-
-
-
 
