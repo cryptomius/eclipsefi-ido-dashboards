@@ -374,7 +374,7 @@ def display_sankey_diagram(sankey_data):
 
 @st.cache_data(ttl=300)  # 300 seconds = 5 minutes
 def load_data():
-    SHEET_ID = "2PACX-1vST44Twi_xb-S5v-EhkqEgiIEX-9SevcqC0DHCHOcbwiIcP6k8LaZA_j5owb8D4r32r9vYJeaYlPZJa"
+    SHEET_ID = st.secrets["SHEET_ID"]
     url = f"https://docs.google.com/spreadsheets/d/e/{SHEET_ID}/pub?output=csv"
     
     try:
