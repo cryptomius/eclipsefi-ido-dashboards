@@ -374,8 +374,12 @@ def display_sankey_diagram(sankey_data):
 
 @st.cache_data(ttl=300)  # 300 seconds = 5 minutes
 def load_data():
-    # Update this line to access the nested secret
-    SHEET_ID = st.secrets["google_sheets"]["SHEET_ID"]
+    # Try nested secret first, fall back to direct secret if not found
+    try:
+        SHEET_ID = st.secrets["google_sheets"]["SHEET_ID"]
+    except:
+        SHEET_ID = st.secrets["SHEET_ID"]
+    
     url = f"https://docs.google.com/spreadsheets/d/e/{SHEET_ID}/pub?output=csv"
     
     try:
