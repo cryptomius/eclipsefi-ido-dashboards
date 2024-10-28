@@ -17,20 +17,6 @@ from decimal import Decimal
 # Add this near the top of your script, after the imports
 st.set_page_config(layout="wide")
 
-# Add this function here, before other functions
-def add_auto_refresh():
-    time_placeholder = st.empty()
-    current_time = datetime.now(timezone.utc)
-    time_placeholder.markdown(f"*Next update in: 60 seconds*")
-    
-    # Add auto-refresh meta tag
-    st.markdown(
-        """
-        <meta http-equiv="refresh" content="60">
-        """,
-        unsafe_allow_html=True,
-    )
-
 # Set up MongoDB connection
 @st.cache_resource
 def init_connection():
@@ -39,7 +25,7 @@ def init_connection():
 client = init_connection()
 
 # Function to get projects from MongoDB
-@st.cache_data(ttl=600)
+@st.cache_data
 def get_projects():
     db = client.IDO
     projects = list(db.production.find({}, {
@@ -58,14 +44,14 @@ def get_whitelist_applicants(project_id):
     return applicants
 
 # Keep ideal allocations updating every minute
-@st.cache_data(ttl=60)
+@st.cache_data
 def get_ideal_allocations(project_id):
     db = client.IDO
     applicants = list(db.whitelist.find({"project_id": project_id}, {"wallet_address": 1, "form_data.idealAllocation": 1}))
     return applicants
 
 # Keep smart contract queries updating every minute
-@st.cache_data(ttl=60)
+@st.cache_data
 def query_smart_contract(contract_address, query):
     rest_endpoint = st.secrets["neutron"]["rpc_url"]
     encoded_query = base64.b64encode(json.dumps(query).encode()).decode()
@@ -148,7 +134,7 @@ def get_essence_csv(project_id):
         return None
 
 # Add this function to check if FCFS is still active
-@st.cache_data(ttl=60)
+@st.cache_data
 def is_fcfs_active(project_id):
     db = client.IDO
     project = db.production.find_one({"id": project_id}, {"token.fcfs_ido_end": 1})
@@ -161,11 +147,22 @@ def is_fcfs_active(project_id):
 # Main app
 def main():
     st.title("Eclipse Fi IDO Analytics Dashboard")
-    add_auto_refresh()
 
-    # Create empty containers for dynamic content at the top level
-    snapshot_time_container = st.empty()
+    # Remove snapshot_time_container since we don't need it anymore
     status_text_container = st.empty()
+
+    # Add refresh button and last updated time in columns
+    col1, col2 = st.columns([1, 5])
+    with col1:
+        if st.button("🔄 Refresh Data"):
+            # Clear caches for functions that need refreshing
+            query_smart_contract.clear()
+            get_ideal_allocations.clear()
+            is_fcfs_active.clear()
+            st.rerun()
+    with col2:
+        current_time = datetime.now(timezone.utc)
+        st.markdown(f"*Last updated: {current_time.strftime('%Y-%m-%d %H:%M UTC')}*")
 
     # Get projects and create selectbox
     projects = get_projects()
@@ -228,7 +225,9 @@ def main():
         if total_raised_str.lower() == 'tba':
             total_raised = 0
         else:
-            total_raised = float(total_raised_str.replace(",", ""))
+            # Strip out any non-numeric characters except decimal points
+            numeric_str = ''.join(c for c in total_raised_str if c.isdigit() or c == '.')
+            total_raised = float(numeric_str)
     except (ValueError, KeyError, AttributeError):
         total_raised = 0
         st.warning("Total raised amount not available or invalid")
@@ -341,12 +340,11 @@ def main():
                     
                     status_text = ", ".join(parts) + " remaining"
                 
-                # Update the empty containers with current values
-                snapshot_time_container.markdown(f"*Snapshot as of: {current_time_str}*")
+                # Only update the status text
                 status_text_container.markdown(f"**{status_text}**")
             else:
                 # If no end time found, just show snapshot time
-                snapshot_time_container.markdown(f"*Snapshot as of: {current_time_str}*")
+                status_text_container.markdown(f"*Snapshot as of: {current_time_str}*")
 
             col1, col2 = st.columns(2)
             with col1:
