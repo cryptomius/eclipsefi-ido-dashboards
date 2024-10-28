@@ -374,7 +374,8 @@ def display_sankey_diagram(sankey_data):
 
 @st.cache_data(ttl=300)  # 300 seconds = 5 minutes
 def load_data():
-    SHEET_ID = st.secrets["SHEET_ID"]
+    # Update this line to access the nested secret
+    SHEET_ID = st.secrets["google_sheets"]["SHEET_ID"]
     url = f"https://docs.google.com/spreadsheets/d/e/{SHEET_ID}/pub?output=csv"
     
     try:
@@ -632,6 +633,13 @@ def process_top_participants(filtered_df):
     # Reorder columns
     column_order = ['Wallet Address', 'Private', 'FCFS', 'USD', 'Token', 'Node', 'Projects #', 'Project Names']
     top_participants = top_participants[column_order]
+    
+    # Add wallet address formatting
+    def format_wallet_address(address):
+        return f"{address[:14]}......{address[-5:]}"
+    
+    # Format wallet addresses
+    top_participants['Wallet Address'] = top_participants['Wallet Address'].apply(format_wallet_address)
     
     return top_participants
 

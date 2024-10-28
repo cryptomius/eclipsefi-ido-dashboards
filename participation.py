@@ -7,11 +7,12 @@ from bson import ObjectId
 import requests
 import base64
 import json
-from datetime import datetime
+from datetime import datetime, timezone
 import numpy as np
 import time
 from requests.exceptions import RequestException
 import io
+from decimal import Decimal
 
 # Add this near the top of your script, after the imports
 st.set_page_config(layout="wide")
@@ -138,26 +139,6 @@ def is_fcfs_active(project_id):
     end_time = datetime.fromisoformat(project["token"]["fcfs_ido_end"].replace('Z', '+00:00'))
     return datetime.now(end_time.tzinfo) < end_time
 
-def format_time_remaining(end_time):
-    now = datetime.now(end_time.tzinfo)
-    if now > end_time:
-        return "IDO closed"
-    
-    time_left = end_time - now
-    days = time_left.days
-    hours = time_left.seconds // 3600
-    minutes = (time_left.seconds % 3600) // 60
-    
-    parts = []
-    if days > 0:
-        parts.append(f"{days} days")
-    if hours > 0:
-        parts.append(f"{hours} hours")
-    if minutes > 0:
-        parts.append(f"{minutes} minutes")
-    
-    return ", ".join(parts) + " remaining"
-
 # Main app
 def main():
     st.title("Eclipse Fi IDO Analytics Dashboard")
@@ -222,16 +203,23 @@ def main():
             participant_data = []
             for p in participant_list["data"]:
                 wallet = p["address"]
-                funded_private = int(p["participant"]["funded_private"]) / 1000000
-                funded_public = int(p["participant"]["funded_public"]) / 1000000
+                # Use Decimal for precise calculations
+                funded_private = Decimal(p["participant"]["funded_private"]) / Decimal('1000000')
+                funded_public = Decimal(p["participant"]["funded_public"]) / Decimal('1000000')
                 participant_data.append({
                     "wallet": wallet,
-                    "funded_private": funded_private,
-                    "funded_public": funded_public,
-                    "total_funded": funded_private + funded_public
+                    "funded_private": float(funded_private),  # Convert to float for DataFrame compatibility
+                    "funded_public": float(funded_public),
+                    "total_funded": float(funded_private + funded_public)
                 })
             
             participant_df = pd.DataFrame(participant_data)
+
+            # Calculate total raised using sum of original Decimal values to maintain precision
+            total_raised_actual = sum(
+                (Decimal(p["participant"]["funded_private"]) + Decimal(p["participant"]["funded_public"])) 
+                for p in participant_list["data"]
+            ) / Decimal('1000000')
 
             # Merge data
             merged_df = essence_df.merge(pd.DataFrame({"wallet": applicant_wallets}), on="wallet", how="inner")
@@ -239,40 +227,57 @@ def main():
             merged_df = merged_df.merge(participant_df, on="wallet", how="left")
             merged_df["total_funded"] = merged_df["total_funded"].fillna(0)
 
-            # Calculate total raised
-            total_raised_actual = participant_df["total_funded"].sum()
-            
             # Visualizations
             st.header("Project Overview")
             
-            # Get the end time
+            # Get the end time and format current time
             db = client.IDO
             project = db.production.find_one({"id": project_id}, {"token.fcfs_ido_end": 1})
+            
+            # Use datetime.now(UTC) instead of deprecated utcnow()
+            current_time = datetime.now(timezone.utc)
+            current_time_str = current_time.strftime("%Y-%m-%d %H:%M UTC")
+            
             if project and "token" in project and "fcfs_ido_end" in project["token"]:
                 end_time = datetime.fromisoformat(project["token"]["fcfs_ido_end"].replace('Z', '+00:00'))
-                time_remaining = format_time_remaining(end_time)
                 
-                # Create info text with markdown for styling
-                info_text = f"""
-                *Data refreshes every 5 minutes while IDO is active*  
-                **{time_remaining}**
-                """
-                st.markdown(info_text)
+                # Format the countdown or show IDO closed
+                if current_time > end_time:
+                    status_text = "IDO closed"
+                else:
+                    time_left = end_time - current_time
+                    days = time_left.days
+                    hours = time_left.seconds // 3600
+                    minutes = (time_left.seconds % 3600) // 60
+                    
+                    parts = []
+                    if days > 0:
+                        parts.append(f"{days} days")
+                    if hours > 0:
+                        parts.append(f"{hours} hours")
+                    if minutes > 0:
+                        parts.append(f"{minutes} minutes")
+                    
+                    status_text = ", ".join(parts) + " remaining"
+                
+                # Display snapshot time and status
+                st.markdown(f"*Snapshot as of: {current_time_str}*")
+                st.markdown(f"**{status_text}**")
             else:
-                st.markdown("*Data refreshes every 5 minutes while IDO is active*")
-            
+                # If no end time found, just show snapshot time
+                st.markdown(f"*Snapshot as of: {current_time_str}*")
+
             col1, col2 = st.columns(2)
             with col1:
                 # Calculate totals for each phase
                 total_private = participant_df["funded_private"].sum()
                 total_public = participant_df["funded_public"].sum()
                 
-                fig = go.Figure()
-
                 # Add the gauge with updated styling
+                fig = go.Figure()
                 fig.add_trace(go.Indicator(
                     mode="gauge+number+delta",
-                    value=total_raised_actual,
+                    value=float(total_raised_actual),
                     title={'text': "Total Raised (USDC)"},
                     delta={
                         'reference': total_raised,
@@ -281,15 +286,16 @@ def main():
                         'position': "bottom"
                     },
                     number={
-                        'valueformat': '.1s',  # This will format to k/M/B with one decimal
-                        'font': {'color': "darkblue"}
+                        'valueformat': '.3s',
+                        'font': {'color': "darkblue"},
+                        'suffix': ''
                     },
                     gauge={
                         'axis': {'range': [None, total_raised]},
                         'bar': {'color': "darkblue"},
                         'steps': [
-                            {'range': [0, total_private], 'color': "rgb(200, 200, 255)", 'name': "Whitelist Sale"},
-                            {'range': [total_private, total_raised_actual], 'color': "rgb(100, 100, 255)", 'name': "FCFS"}
+                            {'range': [0, float(total_private)], 'color': "rgb(200, 200, 255)", 'name': "Whitelist Sale"},
+                            {'range': [float(total_private), float(total_raised_actual)], 'color': "rgb(100, 100, 255)", 'name': "FCFS"}
                         ],
                         'threshold': {
                             'line': {'color': "red", 'width': 4},
@@ -299,7 +305,7 @@ def main():
                     }
                 ))
 
-                # Add a subtitle showing the breakdown (keeping full precision in the subtitle)
+                # Add a subtitle showing the breakdown
                 fig.add_annotation(
                     text=f"Whitelist Sale: {total_private:,.2f} USDC<br>FCFS: {total_public:,.2f} USDC",
                     xref="paper",
