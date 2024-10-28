@@ -37,14 +37,14 @@ def get_projects():
     return projects
 
 # Function to get whitelist applicants
-@st.cache_data(ttl=600)
+@st.cache_data(ttl=60)
 def get_whitelist_applicants(project_id):
     db = client.IDO
     applicants = list(db.whitelist.find({"project_id": project_id}))
     return applicants
 
 # Function to query smart contract
-@st.cache_data(ttl=300)  # Set TTL to 300 seconds (5 minutes)
+@st.cache_data(ttl=60)  # Set TTL to 60 seconds for functions that need frequent updates
 def query_smart_contract(contract_address, query):
     rest_endpoint = st.secrets["neutron"]["rpc_url"]
     encoded_query = base64.b64encode(json.dumps(query).encode()).decode()
@@ -115,7 +115,7 @@ def tier_order(tier):
     return tier_ranks.get(tier, -1)  # Return -1 for unknown tiers
 
 # Function to get ideal allocations
-@st.cache_data(ttl=600)
+@st.cache_data(ttl=60)
 def get_ideal_allocations(project_id):
     db = client.IDO
     applicants = list(db.whitelist.find({"project_id": project_id}, {"wallet_address": 1, "form_data.idealAllocation": 1}))
@@ -134,7 +134,7 @@ def get_essence_csv(project_id):
         return None
 
 # Add this function to check if FCFS is still active
-@st.cache_data(ttl=300)
+@st.cache_data(ttl=60)
 def is_fcfs_active(project_id):
     db = client.IDO
     project = db.production.find_one({"id": project_id}, {"token.fcfs_ido_end": 1})
