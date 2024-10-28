@@ -166,8 +166,11 @@ def main():
 
     # Get projects and create selectbox
     projects = get_projects()
-    # Filter out projects with "Eclipse Fi" in the name and sort by whitelist_ido_start
-    projects = [p for p in projects if "Eclipse Fi" not in p["info"]["name"]]
+    
+    # Filter out projects with "Eclipse Fi" in the name and those without fcfs_ido_end
+    projects = [p for p in projects if 
+                "Eclipse Fi" not in p["info"]["name"] and 
+                p.get("token", {}).get("fcfs_ido_end") is not None]
     
     # Sort projects, putting None dates at the end
     projects.sort(
