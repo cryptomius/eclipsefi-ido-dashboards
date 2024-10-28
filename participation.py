@@ -38,7 +38,7 @@ def get_whitelist_applicants(project_id):
     return applicants
 
 # Function to query smart contract
-@st.cache_data(ttl=60)
+@st.cache_data(ttl=300)  # Set TTL to 300 seconds (5 minutes)
 def query_smart_contract(contract_address, query):
     rest_endpoint = st.secrets["neutron"]["rpc_url"]
     encoded_query = base64.b64encode(json.dumps(query).encode()).decode()
@@ -127,6 +127,37 @@ def get_essence_csv(project_id):
         st.error(f"Failed to fetch CSV for project {project_id}. Status code: {response.status_code}")
         return None
 
+# Add this function to check if FCFS is still active
+@st.cache_data(ttl=300)
+def is_fcfs_active(project_id):
+    db = client.IDO
+    project = db.production.find_one({"id": project_id}, {"token.fcfs_ido_end": 1})
+    if not project or "token" not in project or "fcfs_ido_end" not in project["token"]:
+        return False
+    
+    end_time = datetime.fromisoformat(project["token"]["fcfs_ido_end"].replace('Z', '+00:00'))
+    return datetime.now(end_time.tzinfo) < end_time
+
+def format_time_remaining(end_time):
+    now = datetime.now(end_time.tzinfo)
+    if now > end_time:
+        return "IDO closed"
+    
+    time_left = end_time - now
+    days = time_left.days
+    hours = time_left.seconds // 3600
+    minutes = (time_left.seconds % 3600) // 60
+    
+    parts = []
+    if days > 0:
+        parts.append(f"{days} days")
+    if hours > 0:
+        parts.append(f"{hours} hours")
+    if minutes > 0:
+        parts.append(f"{minutes} minutes")
+    
+    return ", ".join(parts) + " remaining"
+
 # Main app
 def main():
     st.title("Eclipse Fi IDO Analytics Dashboard")
@@ -213,22 +244,78 @@ def main():
             
             # Visualizations
             st.header("Project Overview")
+            
+            # Get the end time
+            db = client.IDO
+            project = db.production.find_one({"id": project_id}, {"token.fcfs_ido_end": 1})
+            if project and "token" in project and "fcfs_ido_end" in project["token"]:
+                end_time = datetime.fromisoformat(project["token"]["fcfs_ido_end"].replace('Z', '+00:00'))
+                time_remaining = format_time_remaining(end_time)
+                
+                # Create info text with markdown for styling
+                info_text = f"""
+                *Data refreshes every 5 minutes while IDO is active*  
+                **{time_remaining}**
+                """
+                st.markdown(info_text)
+            else:
+                st.markdown("*Data refreshes every 5 minutes while IDO is active*")
+            
             col1, col2 = st.columns(2)
             with col1:
-                fig = go.Figure(go.Indicator(
-                    mode = "gauge+number",
-                    value = total_raised_actual,
-                    domain = {'x': [0, 1], 'y': [0, 1]},
-                    title = {'text': "Total Raised (USDC)"},
-                    gauge = {
+                # Calculate totals for each phase
+                total_private = participant_df["funded_private"].sum()
+                total_public = participant_df["funded_public"].sum()
+                
+                fig = go.Figure()
+
+                # Add the gauge with updated styling
+                fig.add_trace(go.Indicator(
+                    mode="gauge+number+delta",
+                    value=total_raised_actual,
+                    title={'text': "Total Raised (USDC)"},
+                    delta={
+                        'reference': total_raised,
+                        'decreasing': {'color': "gray"},
+                        'increasing': {'color': "gray"},
+                        'position': "bottom"
+                    },
+                    number={
+                        'valueformat': '.1s',  # This will format to k/M/B with one decimal
+                        'font': {'color': "darkblue"}
+                    },
+                    gauge={
                         'axis': {'range': [None, total_raised]},
                         'bar': {'color': "darkblue"},
-                        'steps' : [
-                            {'range': [0, total_raised], 'color': "lightgray"}],
+                        'steps': [
+                            {'range': [0, total_private], 'color': "rgb(200, 200, 255)", 'name': "Whitelist Sale"},
+                            {'range': [total_private, total_raised_actual], 'color': "rgb(100, 100, 255)", 'name': "FCFS"}
+                        ],
                         'threshold': {
                             'line': {'color': "red", 'width': 4},
                             'thickness': 0.75,
-                            'value': total_raised}}))
+                            'value': total_raised
+                        }
+                    }
+                ))
+
+                # Add a subtitle showing the breakdown (keeping full precision in the subtitle)
+                fig.add_annotation(
+                    text=f"Whitelist Sale: {total_private:,.2f} USDC<br>FCFS: {total_public:,.2f} USDC",
+                    xref="paper",
+                    yref="paper",
+                    x=0.5,
+                    y=-0.1,
+                    showarrow=False,
+                    font=dict(size=12),
+                    align="center"
+                )
+
+                fig.update_layout(
+                    height=400,
+                    margin=dict(t=100, b=100)
+                )
+                
                 st.plotly_chart(fig)
 
             with col2:
