@@ -28,7 +28,12 @@ client = init_connection()
 @st.cache_data(ttl=600)
 def get_projects():
     db = client.IDO
-    projects = list(db.production.find({}, {"id": 1, "info.name": 1, "token.total_raised": 1, "contracts": 1}))
+    projects = list(db.production.find({}, {
+        "id": 1, 
+        "info.name": 1, 
+        "token": 1,  # Include the entire token object
+        "contracts": 1
+    }))
     return projects
 
 # Function to get whitelist applicants
@@ -145,12 +150,69 @@ def main():
 
     # Get projects and create selectbox
     projects = get_projects()
-    project_names = [p["info"]["name"] for p in projects]
-    selected_project_name = st.selectbox("Select a project", project_names, index=project_names.index("MXS Games") if "MXS Games" in project_names else 0)
+    # Filter out projects with "Eclipse Fi" in the name and sort by whitelist_ido_start
+    projects = [p for p in projects if "Eclipse Fi" not in p["info"]["name"]]
     
-    selected_project = next(p for p in projects if p["info"]["name"] == selected_project_name)
+    # Sort projects, putting None dates at the end
+    projects.sort(
+        key=lambda x: (
+            not bool(x.get("token", {}).get("whitelist_ido_start")),  # Empty/None dates go last
+            x.get("token", {}).get("whitelist_ido_start") or "9999-12-31"  # Then sort by date
+        ), 
+        reverse=False
+    )
+    
+    # Separate projects with dates and without dates
+    projects_with_dates = [p for p in projects if p.get("token", {}).get("whitelist_ido_start")]
+    projects_without_dates = [p for p in projects if not p.get("token", {}).get("whitelist_ido_start")]
+    
+    # Reverse only the projects with dates
+    projects_with_dates.reverse()
+    
+    # Combine the lists back together
+    projects = projects_with_dates + projects_without_dates
+    
+    # Create project names with dates and find default selection
+    project_names = []
+    default_index = 0
+    found_valid_csv = False
+    
+    for i, p in enumerate(projects):
+        name = p["info"]["name"]
+        start_date = p.get("token", {}).get("whitelist_ido_start", "")
+        if start_date:
+            try:
+                date_obj = datetime.fromisoformat(start_date.replace('Z', '+00:00'))
+                formatted_date = date_obj.strftime("%d %b %Y")
+                name = f"{name} ({formatted_date})"
+            except ValueError:
+                pass
+        project_names.append(name)
+        
+        # Only check for CSV if we haven't found a valid one yet
+        if not found_valid_csv:
+            csv_content = get_essence_csv(p["id"])
+            if csv_content is not None:
+                default_index = i
+                found_valid_csv = True
+    
+    selected_project_name = st.selectbox("Select a project", project_names, index=default_index)
+    
+    # Extract the original project name without the date for lookup
+    selected_project_name_only = selected_project_name.split(" (")[0]
+    selected_project = next(p for p in projects if p["info"]["name"] == selected_project_name_only)
     project_id = selected_project["id"]
-    total_raised = float(selected_project["token"]["total_raised"].replace(",", ""))
+    
+    # Handle the total_raised value safely
+    try:
+        total_raised_str = selected_project["token"]["total_raised"]
+        if total_raised_str.lower() == 'tba':
+            total_raised = 0
+        else:
+            total_raised = float(total_raised_str.replace(",", ""))
+    except (ValueError, KeyError, AttributeError):
+        total_raised = 0
+        st.warning("Total raised amount not available or invalid")
 
     # Get contract address
     contract_address = get_contract_address(selected_project)
