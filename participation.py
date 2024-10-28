@@ -17,6 +17,20 @@ from decimal import Decimal
 # Add this near the top of your script, after the imports
 st.set_page_config(layout="wide")
 
+# Add this function here, before other functions
+def add_auto_refresh():
+    time_placeholder = st.empty()
+    current_time = datetime.now(timezone.utc)
+    time_placeholder.markdown(f"*Next update in: 60 seconds*")
+    
+    # Add auto-refresh meta tag
+    st.markdown(
+        """
+        <meta http-equiv="refresh" content="60">
+        """,
+        unsafe_allow_html=True,
+    )
+
 # Set up MongoDB connection
 @st.cache_resource
 def init_connection():
@@ -36,15 +50,22 @@ def get_projects():
     }))
     return projects
 
-# Function to get whitelist applicants
-@st.cache_data(ttl=60)
+# Whitelist applicants only need to be loaded once per session
+@st.cache_data
 def get_whitelist_applicants(project_id):
     db = client.IDO
     applicants = list(db.whitelist.find({"project_id": project_id}))
     return applicants
 
-# Function to query smart contract
-@st.cache_data(ttl=60)  # Set TTL to 60 seconds for functions that need frequent updates
+# Keep ideal allocations updating every minute
+@st.cache_data(ttl=60)
+def get_ideal_allocations(project_id):
+    db = client.IDO
+    applicants = list(db.whitelist.find({"project_id": project_id}, {"wallet_address": 1, "form_data.idealAllocation": 1}))
+    return applicants
+
+# Keep smart contract queries updating every minute
+@st.cache_data(ttl=60)
 def query_smart_contract(contract_address, query):
     rest_endpoint = st.secrets["neutron"]["rpc_url"]
     encoded_query = base64.b64encode(json.dumps(query).encode()).decode()
@@ -114,13 +135,6 @@ def tier_order(tier):
     }
     return tier_ranks.get(tier, -1)  # Return -1 for unknown tiers
 
-# Function to get ideal allocations
-@st.cache_data(ttl=60)
-def get_ideal_allocations(project_id):
-    db = client.IDO
-    applicants = list(db.whitelist.find({"project_id": project_id}, {"wallet_address": 1, "form_data.idealAllocation": 1}))
-    return applicants
-
 def get_essence_csv(project_id):
     base_url = "https://raw.githubusercontent.com/cryptomius/eclipsefi-utils/main/data/cosmic-essence-snapshots/"
     file_name = f"{project_id.lower()}.csv"
@@ -147,6 +161,11 @@ def is_fcfs_active(project_id):
 # Main app
 def main():
     st.title("Eclipse Fi IDO Analytics Dashboard")
+    add_auto_refresh()
+
+    # Create empty containers for dynamic content at the top level
+    snapshot_time_container = st.empty()
+    status_text_container = st.empty()
 
     # Get projects and create selectbox
     projects = get_projects()
@@ -296,7 +315,7 @@ def main():
             db = client.IDO
             project = db.production.find_one({"id": project_id}, {"token.fcfs_ido_end": 1})
             
-            # Use datetime.now(UTC) instead of deprecated utcnow()
+            # Use datetime.now(UTC) for current time
             current_time = datetime.now(timezone.utc)
             current_time_str = current_time.strftime("%Y-%m-%d %H:%M UTC")
             
@@ -322,12 +341,12 @@ def main():
                     
                     status_text = ", ".join(parts) + " remaining"
                 
-                # Display snapshot time and status
-                st.markdown(f"*Snapshot as of: {current_time_str}*")
-                st.markdown(f"**{status_text}**")
+                # Update the empty containers with current values
+                snapshot_time_container.markdown(f"*Snapshot as of: {current_time_str}*")
+                status_text_container.markdown(f"**{status_text}**")
             else:
                 # If no end time found, just show snapshot time
-                st.markdown(f"*Snapshot as of: {current_time_str}*")
+                snapshot_time_container.markdown(f"*Snapshot as of: {current_time_str}*")
 
             col1, col2 = st.columns(2)
             with col1:
