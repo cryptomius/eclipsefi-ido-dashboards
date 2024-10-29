@@ -144,6 +144,23 @@ def is_fcfs_active(project_id):
     end_time = datetime.fromisoformat(project["token"]["fcfs_ido_end"].replace('Z', '+00:00'))
     return datetime.now(end_time.tzinfo) < end_time
 
+# Add this new function after query_smart_contract
+@st.cache_data
+def get_target_amount(contract_address):
+    try:
+        fund_config = query_smart_contract(contract_address, {"query_fund_config": {}})
+        
+        if fund_config and "data" in fund_config:
+            total_rewards = Decimal(fund_config["data"]["total_rewards_amount"])
+            exchange_rate = Decimal(fund_config["data"]["exchange_rate"])
+            target = float(total_rewards / exchange_rate / Decimal('1000000'))
+            return target
+        
+        return None
+    except (KeyError, ValueError, TypeError, ZeroDivisionError) as e:
+        st.warning(f"Error calculating target amount from smart contract: {str(e)}")
+        return None
+
 # Main app
 def main():
     st.title("Eclipse Fi IDO Analytics Dashboard")
@@ -351,18 +368,23 @@ def main():
 
             col1, col2 = st.columns(2)
             with col1:
+                # Get target amount from smart contract or fall back to MongoDB value
+                target_amount = get_target_amount(contract_address)
+                if target_amount is None:
+                    target_amount = total_raised  # Fall back to MongoDB value
+                
                 # Calculate totals for each phase
                 total_private = participant_df["funded_private"].sum()
                 total_public = participant_df["funded_public"].sum()
                 
-                # Add the gauge with updated styling
+                # Create the gauge without the annotation
                 fig = go.Figure()
                 fig.add_trace(go.Indicator(
                     mode="gauge+number+delta",
                     value=float(total_raised_actual),
                     title={'text': "Total Raised (USDC)"},
                     delta={
-                        'reference': total_raised,
+                        'reference': target_amount,
                         'decreasing': {'color': "gray"},
                         'increasing': {'color': "gray"},
                         'position': "bottom"
@@ -373,7 +395,7 @@ def main():
                         'suffix': ''
                     },
                     gauge={
-                        'axis': {'range': [None, total_raised]},
+                        'axis': {'range': [None, target_amount]},
                         'bar': {'color': "darkblue"},
                         'steps': [
                             {'range': [0, float(total_private)], 'color': "rgb(200, 200, 255)", 'name': "Whitelist Sale"},
@@ -382,29 +404,23 @@ def main():
                         'threshold': {
                             'line': {'color': "red", 'width': 4},
                             'thickness': 0.75,
-                            'value': total_raised
+                            'value': target_amount
                         }
                     }
                 ))
 
-                # Add a subtitle showing the breakdown
-                fig.add_annotation(
-                    text=f"Whitelist Sale: {total_private:,.2f} USDC<br>FCFS: {total_public:,.2f} USDC",
-                    xref="paper",
-                    yref="paper",
-                    x=0.5,
-                    y=-0.1,
-                    showarrow=False,
-                    font=dict(size=12),
-                    align="center"
-                )
-
-                fig.update_layout(
-                    height=400,
-                    margin=dict(t=100, b=100)
-                )
+                # Update the layout height from 300 to 390 (30% increase)
+                fig.update_layout(height=390)
                 
+                # Display the gauge
                 st.plotly_chart(fig)
+                
+                # Display the breakdown text below the gauge
+                st.markdown(f"""
+                    - Whitelist Sale: {total_private:,.2f} USDC
+                    - FCFS: {total_public:,.2f} USDC
+                    - Target: {target_amount:,.2f} USDC
+                """)
 
             with col2:
                 tier_counts = merged_df["tier"].value_counts().reset_index()
