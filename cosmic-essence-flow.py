@@ -9,7 +9,14 @@ from io import StringIO
 # MongoDB connection
 @st.cache_resource
 def init_mongo_client():
-    return MongoClient(st.secrets["mongo"]["connection_string"])
+    try:
+        # Try the nested mongo.connection_string first
+        connection_string = st.secrets["mongo"]["connection_string"]
+    except:
+        # Fall back to top-level connection_string
+        connection_string = st.secrets["connection_string"]
+    
+    return MongoClient(connection_string)
 
 def get_tier(essence):
     essence = float(essence) / 1000000  # Convert to correct scale
