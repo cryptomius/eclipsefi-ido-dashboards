@@ -314,7 +314,7 @@ def main():
     # Title first
     st.title("User Tier Flow Between Projects")
     
-    # Define colors for each tier (pastel palette) - reversed order
+    # Define colors for each tier (pastel palette)
     tier_colors = {
         "No Tier": "#D9D9D9",          # Light Gray
         "Star Dust": "#FFD1B3",       # Pastel Orange
@@ -328,11 +328,11 @@ def main():
     # Create the legend
     create_tier_legend(tier_colors)
     
-    # Initialize MongoDB client
+    # Initialize MongoDB client and get data
     client = init_mongo_client()
     db = client.IDO
     
-    # Get projects from MongoDB - add $ne: null to ensure whitelist_ido_start exists and isn't null
+    # Get projects from MongoDB
     projects = list(db.production.find(
         {
             "info.name": {"$not": {"$regex": "Eclipse Fi"}},
@@ -341,7 +341,7 @@ def main():
         {"id": 1, "info.name": 1, "token.whitelist_ido_start": 1}
     ))
     
-    # Sort projects by whitelist_ido_start with error handling
+    # Sort projects by whitelist_ido_start
     try:
         projects.sort(key=lambda x: datetime.fromisoformat(x["token"]["whitelist_ido_start"].replace("Z", "+00:00")))
     except Exception as e:
@@ -355,8 +355,27 @@ def main():
         if df is not None:
             project_data.append((project["info"]["name"], df))
     
-    if len(project_data) >= 2:  # Need at least 2 projects for comparison
-        # Create Sankey diagram
+    if len(project_data) >= 2:
+        # Add the column chart first
+        column_chart = create_tier_column_chart(project_data)
+        st.plotly_chart(
+            column_chart, 
+            use_container_width=True,
+            config={
+                'displayModeBar': False
+            }
+        )
+        
+        # Add spacing
+        st.markdown("<br>", unsafe_allow_html=True)
+        
+        # Add the stats table
+        create_tier_stats_table(project_data)
+        
+        # Add spacing
+        st.markdown("<br>", unsafe_allow_html=True)
+        
+        # Create Sankey diagram last
         nodes, source, target, value, node_colors, link_colors, node_hovers = create_sankey_data(project_data)
         
         fig = go.Figure(data=[go.Sankey(
@@ -366,8 +385,8 @@ def main():
                 line=dict(color="black", width=0.5),
                 label=nodes,
                 color=node_colors,
-                hovertemplate="%{customdata}<extra></extra>",  # Custom hover template
-                customdata=node_hovers  # Add hover data
+                hovertemplate="%{customdata}<extra></extra>",
+                customdata=node_hovers
             ),
             link=dict(
                 source=source,
@@ -385,29 +404,12 @@ def main():
             showlegend=False,
         )
         
-        # Update config to allow hovering
         st.plotly_chart(
             fig, 
             use_container_width=True,
             config={
-                'displayModeBar': False,  # Hide the mode bar
-                'staticPlot': False,  # Enable interactivity for hovering
-            }
-        )
-        
-        # Add the stats table below the Sankey diagram
-        create_tier_stats_table(project_data)
-        
-        # Add spacing
-        st.markdown("<br>", unsafe_allow_html=True)
-        
-        # Add the column chart
-        column_chart = create_tier_column_chart(project_data)
-        st.plotly_chart(
-            column_chart, 
-            use_container_width=True,
-            config={
-                'displayModeBar': False
+                'displayModeBar': False,
+                'staticPlot': False,
             }
         )
     else:
