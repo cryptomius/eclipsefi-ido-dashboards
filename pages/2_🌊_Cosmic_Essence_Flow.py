@@ -6,6 +6,12 @@ from datetime import datetime
 import requests
 from io import StringIO
 
+st.set_page_config(
+    page_title="Cosmic Essence Flow",
+    page_icon="🌊",
+    layout="wide"
+)
+
 # MongoDB connection
 @st.cache_resource
 def init_mongo_client():
@@ -307,8 +313,6 @@ def create_tier_column_chart(project_dfs):
     return fig
 
 def main():
-    st.set_page_config(layout="wide")
-    
     # Add CSS to remove text-shadow from node labels
     st.markdown("""
         <style>
